@@ -1,0 +1,177 @@
+import os
+import time
+import smtplib
+import requests
+import wikipedia
+import pyttsx3
+import webbrowser
+import openai
+import speech_recognition as sr
+from email.message import EmailMessage
+from threading import Timer
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+EMAIL = os.getenv("EMAIL_ADDRESS")
+EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD")
+WEATHER_API_KEY = os.getenv("WEATHER_API_KEY")
+
+openai.api_key = OPENAI_API_KEY
+
+# Text-to-speech
+engine = pyttsx3.init()
+def speak(text):
+    print(f"Assistant: {text}")
+    engine.say(text)
+    engine.runAndWait()
+
+# Speech recognition
+def listen():
+    recognizer = sr.Recognizer()
+    with sr.Microphone() as source:
+        print("🎤 Listening...")
+        audio = recognizer.listen(source)
+        try:
+            query = recognizer.recognize_google(audio)
+            print(f"🗣️ You said: {query}")
+            return query.lower()
+        except sr.UnknownValueError:
+            speak("Sorry, I didn't catch that.")
+            return ""
+        except sr.RequestError:
+            speak("Network error.")
+            return ""
+
+# Send email
+def send_email():
+    speak("Who is the recipient?")
+    recipient = listen()
+    speak("What is the subject?")
+    subject = listen()
+    speak("What should I say?")
+    body = listen()
+
+    try:
+        msg = EmailMessage()
+        msg['From'] = EMAIL
+        msg['To'] = recipient
+        msg['Subject'] = subject
+        msg.set_content(body)
+
+        with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:
+            smtp.login(EMAIL, EMAIL_PASSWORD)
+            smtp.send_message(msg)
+        speak("Email sent successfully.")
+    except Exception as e:
+        speak(f"Failed to send email: {e}")
+
+# Weather info
+def get_weather():
+    speak("Which city?")
+    city = listen()
+    if not city:
+        return
+
+    url = f"http://api.openweathermap.org/data/2.5/weather?q={city}&appid={WEATHER_API_KEY}&units=metric"
+    try:
+        res = requests.get(url)
+        data = res.json()
+        if data.get("cod") != 200:
+            speak("City not found.")
+            return
+        temp = data["main"]["temp"]
+        desc = data["weather"][0]["description"]
+        speak(f"It's {temp}°C with {desc} in {city}.")
+    except:
+        speak("Couldn't fetch weather.")
+
+# Set reminder
+def set_reminder():
+    speak("What should I remind you about?")
+    reminder = listen()
+    speak("In how many seconds?")
+    try:
+        seconds = int(listen())
+    except:
+        speak("Invalid time.")
+        return
+
+    def remind():
+        speak(f"Reminder: {reminder}")
+
+    Timer(seconds, remind).start()
+    speak("Reminder set.")
+
+# Mock smart home control
+def control_device(command):
+    if "turn on" in command:
+        speak("Turning on the device.")
+    elif "turn off" in command:
+        speak("Turning off the device.")
+    else:
+        speak("Device control command not recognized.")
+
+# Open websites
+def open_website(command):
+    if "youtube" in command:
+        webbrowser.open("https://www.youtube.com")
+        speak("Opening YouTube.")
+    elif "google" in command:
+        webbrowser.open("https://www.google.com")
+        speak("Opening Google.")
+    elif "open" in command:
+        try:
+            site = command.split("open ")[1].replace(" ", "")
+            if "." not in site:
+                site += ".com"
+            webbrowser.open(f"https://{site}")
+            speak(f"Opening {site}")
+        except:
+            speak("Sorry, I couldn't understand the website name.")
+
+# Use OpenAI to answer questions
+def ai_answer(query):
+    try:
+        response = openai.ChatCompletion.create(
+            model="gpt-4",  # Or "gpt-3.5-turbo"
+            messages=[
+                {"role": "system", "content": "You are a helpful AI assistant."},
+                {"role": "user", "content": query}
+            ],
+            max_tokens=200,
+            temperature=0.7
+        )
+        answer = response['choices'][0]['message']['content']
+        speak(answer)
+    except Exception as e:
+        speak("Sorry, I couldn't get an answer from AI.")
+        print(e)
+
+# Main assistant loop
+def main():
+    speak("Hello! I am your AI voice assistant. How can I help you?")
+    while True:
+        query = listen()
+        if not query:
+            continue
+
+        if "send email" in query:
+            send_email()
+        elif "weather" in query:
+            get_weather()
+        elif "remind me" in query:
+            set_reminder()
+        elif "turn on" in query or "turn off" in query:
+            control_device(query)
+        elif "open" in query:
+            open_website(query)
+        elif "exit" in query or "quit" in query or "stop" in query:
+            speak("Goodbye!")
+            break
+        else:
+            ai_answer(query)
+
+if __name__ == "__main__":
+    main()
